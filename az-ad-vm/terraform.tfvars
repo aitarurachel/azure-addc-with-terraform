@@ -1,0 +1,6 @@
+yourname       = "charles"
+location       = "eastus"
+admin_password = "Password123!"
+dsrm_password  = "DSRMPwd123!"
+domain_name    = "corp.charles.com"
+domain_netbios = "CORP"
