@@ -84,203 +84,21 @@ touch main.tf variables.tf outputs.tf terraform.tfvars
 
 ### Step 2: Populate `main.tf`
 
-This file defines every Azure resource and the extension that installs AD DS. Paste the full block below:
-
-```hcl
-terraform {
-  required_providers {
-    azurerm = {
-      source  = "hashicorp/azurerm"
-      version = "~> 3.0"
-    }
-  }
-}
-
-provider "azurerm" {
-  features {}
-}
-
-resource "azurerm_resource_group" "main" {
-  name     = "rg-ad-${var.yourname}"
-  location = var.location
-  tags     = var.tags
-}
-
-resource "azurerm_virtual_network" "main" {
-  name                = "vnet-ad-${var.yourname}"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.main.name
-  address_space       = ["10.0.0.0/16"]
-  tags                = var.tags
-}
-
-resource "azurerm_subnet" "main" {
-  name                 = "snet-ad"
-  resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.1.0/24"]
-}
-
-resource "azurerm_public_ip" "main" {
-  name                = "pip-ad-${var.yourname}"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.main.name
-  allocation_method   = "Static"
-  sku                 = "Standard"
-  tags                = var.tags
-}
-
-resource "azurerm_network_security_group" "main" {
-  name                = "nsg-ad-${var.yourname}"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.main.name
-
-  security_rule {
-    name                       = "allow-rdp"
-    priority                   = 1000
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "3389"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-
-  tags = var.tags
-}
-
-resource "azurerm_network_interface" "main" {
-  name                = "nic-ad-${var.yourname}"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.main.name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.main.id
-    private_ip_address_allocation = "Static"
-    private_ip_address            = "10.0.1.4"
-    public_ip_address_id          = azurerm_public_ip.main.id
-  }
-
-  tags = var.tags
-}
-
-resource "azurerm_network_interface_security_group_association" "main" {
-  network_interface_id      = azurerm_network_interface.main.id
-  network_security_group_id = azurerm_network_security_group.main.id
-}
-
-resource "azurerm_windows_virtual_machine" "main" {
-  name                = "vm-ad-${var.yourname}"
-  computer_name       = "ad-${var.yourname}"
-  location            = var.location
-  resource_group_name = azurerm_resource_group.main.name
-  size                = "Standard_D2s_v3"
-  admin_username      = "adadmin"
-  admin_password      = var.admin_password
-
-  network_interface_ids = [azurerm_network_interface.main.id]
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Premium_LRS"
-    disk_size_gb         = 127
-  }
-
-  source_image_reference {
-    publisher = "MicrosoftWindowsServer"
-    offer     = "WindowsServer"
-    sku       = "2022-Datacenter"
-    version   = "latest"
-  }
-
-  additional_unattend_content {
-    content  = "<AutoLogon><Password><Value>${var.admin_password}</Value></Password><Enabled>true</Enabled><LogonCount>1</LogonCount><Username>adadmin</Username></AutoLogon>"
-    setting  = "AutoLogon"
-  }
-
-  tags = var.tags
-}
-
-resource "azurerm_virtual_machine_extension" "ad_setup" {
-  name                 = "install-ad-ds"
-  virtual_machine_id   = azurerm_windows_virtual_machine.main.id
-  publisher            = "Microsoft.Compute"
-  type                 = "CustomScriptExtension"
-  type_handler_version = "1.10"
-
-  settings = jsonencode({
-    commandToExecute = "powershell -ExecutionPolicy Unrestricted -Command \"Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools; Import-Module ADDSDeployment; Install-ADDSForest -DomainName '${var.domain_name}' -DomainNetbiosName '${var.domain_netbios}' -ForestMode 'WinThreshold' -DomainMode 'WinThreshold' -InstallDns:$true -SafeModeAdministratorPassword (ConvertTo-SecureString '${var.dsrm_password}' -AsPlainText -Force) -Force:$true\""
-  })
-
-  tags = var.tags
-}
-```
+This file defines every Azure resource and the extension that installs AD DS. Paste the full block in az-ad-vm/main.tf
 
 ---
 
 ### Step 3: Populate `variables.tf`
 
-```hcl
-variable "yourname" {
-  description = "Your name — used to make resource names unique."
-  type        = string
-}
-
-variable "location" {
-  description = "Azure region."
-  type        = string
-  default     = "eastus"
-}
-
-variable "admin_password" {
-  description = "Local admin password for the VM."
-  type        = string
-  sensitive   = true
-}
-
-variable "dsrm_password" {
-  description = "Directory Services Restore Mode password for AD DS."
-  type        = string
-  sensitive   = true
-}
-
-variable "domain_name" {
-  description = "Fully qualified domain name (e.g. corp.example.com)."
-  type        = string
-  default     = "corp.example.com"
-}
-
-variable "domain_netbios" {
-  description = "NetBIOS name for the domain (max 15 characters)."
-  type        = string
-  default     = "CORP"
-}
-
-variable "tags" {
-  description = "Tags to apply to all resources."
-  type        = map(string)
-  default = {
-    project = "ad-lab"
-  }
-}
-```
+This is where you define what inputs the project accepts. Paste the full block in az-ad-vm/variables.tf
 
 ---
 
 ### Step 4: Populate `terraform.tfvars`
 
-> ⚠️ **Add `terraform.tfvars` to your `.gitignore`**. It contains sensitive credentials and should never be committed.
+> ⚠️ **Add `terraform.tfvars` to your `.gitignore`**. It contains sensitive credentials and should never be committed, but for this lab, I've excluded it from the .gitignore.
 
-```hcl
-yourname       = "charles"
-location       = "eastus"
-admin_password = "YourPassword123!"
-dsrm_password  = "YourDSRMPassword123!"
-domain_name    = "corp.charles.com"
-domain_netbios = "CORP"
-```
+This is where you fill in the variables declared in variables.tf. Paste the full block in az-ad-vm/terraform.tfvars
 
 **DSRM Password note:** The Directory Services Restore Mode password is separate from the VM admin password. Store it in a password manager, it is only needed for AD recovery operations and cannot be retrieved after deployment.
 
@@ -288,22 +106,7 @@ domain_netbios = "CORP"
 
 ### Step 5: Populate `outputs.tf`
 
-```hcl
-output "public_ip" {
-  description = "Public IP — use this to RDP into the domain controller"
-  value       = azurerm_public_ip.main.ip_address
-}
-
-output "domain_name" {
-  description = "Active Directory domain name"
-  value       = var.domain_name
-}
-
-output "admin_username" {
-  description = "Local admin username"
-  value       = "adadmin"
-}
-```
+After terraform apply finishes, this file tells Terraform what information to print to your terminal. Paste the full block in az-ad-vm/outputs.tf
 
 ---
 
@@ -317,6 +120,27 @@ terraform plan
 terraform apply
 ```
 
+terraform init
+<br>
+<img width="931" height="380" alt="terra-init" src="https://github.com/user-attachments/assets/3255f79e-d20a-468a-837d-eab81260698c" />
+<br>
+
+terraform plan
+<br>
+<img width="1063" height="514" alt="terra-plan" src="https://github.com/user-attachments/assets/de529ceb-d11b-4272-b4a2-547e144d4c59" />
+<br>
+
+terraform apply
+<br>
+<img width="1112" height="375" alt="terra-apply2" src="https://github.com/user-attachments/assets/bd2d25fd-f4e5-48d1-ac67-afbcd8bc1c14" />
+<br>
+
+Resource group created in Azure portal
+<br>
+<img width="1454" height="489" alt="terra-resourcegroup" src="https://github.com/user-attachments/assets/35a8d7c8-ae4b-4bf1-84a9-21e97998d146" />
+<br>
+<br>
+
 Deployment takes approximately **5–8 minutes** for the VM, plus an additional **3–5 minutes** for the Custom Script Extension to install AD DS and trigger an automatic reboot.
 
 ---
@@ -328,6 +152,16 @@ Get the public IP once the apply completes:
 ```bash
 terraform output public_ip
 ```
+<br>
+
+<img width="509" height="31" alt="terra-public ip" src="https://github.com/user-attachments/assets/8940944a-e346-4ab3-b71c-6c95bb21b94c" />
+<br>
+<br>
+
+<br>
+<img width="1123" height="345" alt="terra-rdp" src="https://github.com/user-attachments/assets/080a3418-e564-4706-ab93-3fa49fbadc0e" />
+<br>
+<br>
 
 | Method | Username | When to use |
 |---|---|---|
@@ -336,6 +170,11 @@ terraform output public_ip
 | Local account | `.\adadmin` | Only if AD promotion failed entirely |
 
 > ⏳ **Wait 5–10 minutes after `terraform apply` completes before connecting.** The VM reboots automatically after AD DS installs. Connecting too early may result in a failed or black-screen RDP session.
+> 
+<br>
+
+<img width="1295" height="840" alt="terra-ad-ds" src="https://github.com/user-attachments/assets/1622a4ce-e4c5-4bbb-8caf-70cfff25afac" />
+<br>
 
 ---
 
@@ -356,6 +195,22 @@ Get-ADDomainController -Filter *
 # Verify DNS is resolving the domain
 Resolve-DnsName corp.charles.com
 ```
+<br>
+
+<img width="457" height="226" alt="verify1" src="https://github.com/user-attachments/assets/a96622bf-0775-44b2-9997-a373f4138837" />
+<br>
+<br>
+
+<img width="649" height="695" alt="verify2" src="https://github.com/user-attachments/assets/d148ef40-4152-4351-9a8e-1fb0c2880339" />
+<br>
+<br>
+
+<img width="764" height="606" alt="verify3" src="https://github.com/user-attachments/assets/c16ebc2b-3baa-4a3f-93d8-f13d2e0092fb" />
+<br>
+<br>
+
+<img width="615" height="250" alt="verify4" src="https://github.com/user-attachments/assets/7a4e0aa2-20e8-4a71-8a53-a3f6bc06f042" />
+<br>
 
 All four commands should return without errors. `Get-ADDomain` will show the full forest and domain functional levels, confirming a successful deployment.
 
@@ -390,6 +245,10 @@ To destroy all resources when done:
 ```bash
 terraform destroy
 ```
+<br>
+
+<img width="958" height="414" alt="terra-destroy" src="https://github.com/user-attachments/assets/7371c826-7aee-4ce3-bcfd-964a30767f08" />
+<br>
 
 This removes the resource group and everything inside it: VM, managed disk, NIC, public IP, NSG, VNet, and subnet.
 
@@ -401,7 +260,7 @@ This removes the resource group and everything inside it: VM, managed disk, NIC,
 
 **Credentials in `terraform.tfvars`**: passwords are stored in a plaintext local file. This is acceptable for a lab, but it isn't a secrets management strategy.
 
-**CustomScriptExtension vs cloud-init**: the extension approach is quick and Azure-native, but it runs as a single opaque command with limited retry logic. If the PowerShell fails mid-execution, the extension status shows `Failed` and you re-run `apply` to retry — there is no partial rollback.
+**CustomScriptExtension vs cloud-init**: the extension approach is quick and Azure-native, but it runs as a single opaque command with limited retry logic. If the PowerShell fails mid-execution, the extension status shows `Failed` and you re-run `apply` to retry, there is no partial rollback.
 
 ---
 
